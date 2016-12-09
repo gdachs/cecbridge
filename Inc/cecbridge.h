@@ -40,28 +40,14 @@
   *
   ******************************************************************************
   */
-/* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __MAIN_H
-#define __MAIN_H
-  /* Includes ------------------------------------------------------------------*/
+#ifndef __CECBRIDGE_H
+#define __CECBRIDGE_H
 
-/* USER CODE BEGIN Includes */
+CEC_HandleTypeDef *getCecHandle(void);
 
-/* USER CODE END Includes */
+enum {
+    NO_ERROR,
+    PARAMETER_ERROR,
+} ErrorCode;
 
-/* Private define ------------------------------------------------------------*/
-
-/* USER CODE BEGIN Private defines */
-
-/* USER CODE END Private defines */
-
-/**
-  * @}
-  */ 
-
-/**
-  * @}
-*/ 
-
-#endif /* __MAIN_H */
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
+#endif /* __CECBRIDGE_H */

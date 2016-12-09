@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
-  * @file    stm32f0xx_it.h
-  * @brief   This file contains the headers of the interrupt handlers.
+  * @file    stm32f0xx_it.c
+  * @brief   Interrupt Service Routines.
   ******************************************************************************
   *
   * COPYRIGHT(c) 2016 STMicroelectronics
@@ -30,33 +30,129 @@
   *
   ******************************************************************************
   */
-
-/* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __STM32F0xx_IT_H
-#define __STM32F0xx_IT_H
-
-#ifdef __cplusplus
- extern "C" {
-#endif 
-
 /* Includes ------------------------------------------------------------------*/
-/* Exported types ------------------------------------------------------------*/
-/* Exported constants --------------------------------------------------------*/
-/* Exported macro ------------------------------------------------------------*/
-/* Exported functions ------------------------------------------------------- */
+#include "stm32f0xx_hal.h"
+#include "stm32f0xx.h"
 
-void NMI_Handler(void);
-void HardFault_Handler(void);
-void SVC_Handler(void);
-void PendSV_Handler(void);
-void SysTick_Handler(void);
-void CEC_CAN_IRQHandler(void);
-void USB_IRQHandler(void);
+#include "cecbridge.h"
 
-#ifdef __cplusplus
+/* USER CODE BEGIN 0 */
+
+/* USER CODE END 0 */
+
+/* External variables --------------------------------------------------------*/
+extern PCD_HandleTypeDef hpcd_USB_FS;
+
+/******************************************************************************/
+/*            Cortex-M0 Processor Interruption and Exception Handlers         */ 
+/******************************************************************************/
+
+/**
+* @brief This function handles Non maskable interrupt.
+*/
+void NMI_Handler(void)
+{
+  /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
+
+  /* USER CODE END NonMaskableInt_IRQn 0 */
+  /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
+
+  /* USER CODE END NonMaskableInt_IRQn 1 */
 }
-#endif
 
-#endif /* __STM32F0xx_IT_H */
+/**
+* @brief This function handles Hard fault interrupt.
+*/
+void HardFault_Handler(void)
+{
+  /* USER CODE BEGIN HardFault_IRQn 0 */
 
+  /* USER CODE END HardFault_IRQn 0 */
+  while (1)
+  {
+  }
+  /* USER CODE BEGIN HardFault_IRQn 1 */
+
+  /* USER CODE END HardFault_IRQn 1 */
+}
+
+/**
+* @brief This function handles System service call via SWI instruction.
+*/
+void SVC_Handler(void)
+{
+  /* USER CODE BEGIN SVC_IRQn 0 */
+
+  /* USER CODE END SVC_IRQn 0 */
+  /* USER CODE BEGIN SVC_IRQn 1 */
+
+  /* USER CODE END SVC_IRQn 1 */
+}
+
+/**
+* @brief This function handles Pendable request for system service.
+*/
+void PendSV_Handler(void)
+{
+  /* USER CODE BEGIN PendSV_IRQn 0 */
+
+  /* USER CODE END PendSV_IRQn 0 */
+  /* USER CODE BEGIN PendSV_IRQn 1 */
+
+  /* USER CODE END PendSV_IRQn 1 */
+}
+
+/**
+* @brief This function handles System tick timer.
+*/
+void SysTick_Handler(void)
+{
+  /* USER CODE BEGIN SysTick_IRQn 0 */
+
+  /* USER CODE END SysTick_IRQn 0 */
+  HAL_IncTick();
+  HAL_SYSTICK_IRQHandler();
+  /* USER CODE BEGIN SysTick_IRQn 1 */
+
+  /* USER CODE END SysTick_IRQn 1 */
+}
+
+/******************************************************************************/
+/* STM32F0xx Peripheral Interrupt Handlers                                    */
+/* Add here the Interrupt Handlers for the used peripherals.                  */
+/* For the available peripheral interrupt handler names,                      */
+/* please refer to the startup file (startup_stm32f0xx.s).                    */
+/******************************************************************************/
+
+/**
+* @brief This function handles HDMI-CEC and CAN global interrupts / HDMI-CEC wake-up interrupt through EXTI line 27.
+*/
+void CEC_CAN_IRQHandler(void)
+{
+  /* USER CODE BEGIN CEC_CAN_IRQn 0 */
+
+  /* USER CODE END CEC_CAN_IRQn 0 */
+  HAL_CEC_IRQHandler(getCecHandle());
+  /* USER CODE BEGIN CEC_CAN_IRQn 1 */
+
+  /* USER CODE END CEC_CAN_IRQn 1 */
+}
+
+/**
+* @brief This function handles USB global Interrupt / USB wake-up interrupt through EXTI line 18.
+*/
+void USB_IRQHandler(void)
+{
+  /* USER CODE BEGIN USB_IRQn 0 */
+
+  /* USER CODE END USB_IRQn 0 */
+  HAL_PCD_IRQHandler(&hpcd_USB_FS);
+  /* USER CODE BEGIN USB_IRQn 1 */
+
+  /* USER CODE END USB_IRQn 1 */
+}
+
+/* USER CODE BEGIN 1 */
+
+/* USER CODE END 1 */
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
