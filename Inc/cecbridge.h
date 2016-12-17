@@ -45,9 +45,10 @@
 
 CEC_HandleTypeDef *getCecHandle(void);
 
-enum {
+enum ErrorCode {
     NO_ERROR,
     PARAMETER_ERROR,
-} ErrorCode;
+    CEC_ERROR,
+};
 
 #endif /* __CECBRIDGE_H */
