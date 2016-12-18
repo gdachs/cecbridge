@@ -204,7 +204,7 @@ static char *escapePayload(uint8_t *bufsrc, size_t len)
     char *result = NULL;
 
     if (bufsrc != NULL
-            && len > 0&& (result = calloc(len * 3 + 1, sizeof(char))) != NULL)
+            && len > 0 && (result = calloc(len * 3 + 1, sizeof(char))) != NULL)
     {
         for (int i = 0; i < len; ++i)
         {
@@ -244,9 +244,10 @@ static uint8_t *unescapePayload(char *dataStr, size_t *len)
                 break;
             case 2:
                 *resultPtr |= isalpha(c) ? c - 'A' + 10 : c - '0';
+                ++resultPtr;
                 break;
             default:
-                ++resultPtr;
+                // do nothing
                 break;
             }
             *len = resultPtr - result;
@@ -270,11 +271,8 @@ int main(void)
 
     MX_USB_DEVICE_Init();
 
-    logMessage("begin of main loop");
-
     initCec();
 
-    /* Infinite loop */
     while (1)
     {
         static uint8_t cecBuffer[64];
@@ -299,6 +297,8 @@ void transmitCecCommand(uint8_t *buffer, size_t len)
 {
     getCecHandle()->Init.InitiatorAddress = buffer[0] >> CEC_INITIATOR_LSB_POS;
     uint8_t destAddr = buffer[0] & 0xf;
+
+    logMessage("transmitCecCommand: %d", len);
 
     if (HAL_CEC_Transmit(getCecHandle(), destAddr, buffer, len - 1, 200) != HAL_OK)
     {
@@ -360,16 +360,15 @@ void USB_CDC_Recv_CB(uint8_t *data, uint32_t len)
 
     for (int i = 0; i < len; ++i)
     {
-        if (data[i] == '\r')
+        if (data[i] == '\n')
         {
             // do nothing
         }
-        else if (data[i] == '\n')
+        else if (data[i] == '\r')
         {
             // command letter at the beginning of the buffer?
             if (strchr("ELPT", toupper(receiveBuffer[0])) != NULL)
             {
-                *receiveBufferPtr++ = 0;
                 handleCommand(receiveBuffer);
 
                 // reset buffer pointer to the beginning of the buffer
@@ -385,7 +384,8 @@ void USB_CDC_Recv_CB(uint8_t *data, uint32_t len)
         {
             *receiveBufferPtr++ = data[i];
         }
-    }
+        *receiveBufferPtr = 0;
+   }
 }
 
 /**
@@ -455,6 +455,6 @@ void HAL_CEC_ErrorCallback(CEC_HandleTypeDef *cecHandle)
  */
 void Error_Handler(void)
 {
-    /* User can add his own implementation to report the HAL error return state */
+    logMessage("unknown error");
 }
 
