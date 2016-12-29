@@ -26,5 +26,6 @@ static inline char *hex_byte_pack(char *buf, uint8_t byte)
 extern int hex_to_bin(char ch);
 extern int hex2bin(uint8_t *dst, const char *src, size_t count);
 extern char *bin2hex(char *dst, const void *src, size_t count);
+extern char *skip_white_space(char *str);
 
 #endif /* UTILS_H_ */

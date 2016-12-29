@@ -76,10 +76,20 @@ typedef struct {
     uint8_t bit_field[2];
     uint8_t physical_address[4];
     uint8_t device_type;
+    uint8_t retry_count;
+    uint8_t configuration_bits[4];
     char osd_name[15];
 } cecbridge_t;
 
-static cecbridge_t cecbridge = { 0xf, {0, 0}, {0, 0, 0, 0}, 0xf, "MyDevice" };
+static cecbridge_t cecbridge = {
+    0xf,            // logical address, default is broadcast
+    { 0, 0 },       // bit field for masking on which logical addresses to respond
+    { 0, 0, 0, 0 }, // physical address
+    0x4,            // device type, set to playback 1
+    5,              // retry count
+    { 0, 0, 0, 0 }, // configuration bits
+    "MyDevice",     // OSD name
+};
 
 typedef enum {
     buf_empty,      // buffer is empty
@@ -173,23 +183,33 @@ static void init_cec(void)
     }
 }
 
-static void tx_usb_message(char *msg)
+static uint8_t tx_usb_message(char *msg)
 {
+    uint8_t ret = USBD_OK;
+
     if (strlen(msg) > 0)
     {
-        CDC_Transmit_FS((uint8_t *) msg, strlen(msg));
+        ret = CDC_Transmit_FS((uint8_t *) msg, strlen(msg) + 1);
     }
+
+    return ret;
 }
 
-static void tx_cec_message(uint8_t *buffer, size_t len)
+static void tx_cec_message(uint8_t *msg, size_t len)
 {
     char response[9] = "?STA ";
     char *response_ptr = response + strlen(response);
+    hcec.Init.InitiatorAddress = msg[0] >> CEC_INITIATOR_LSB_POS;
+    uint8_t destAddr = msg[0] & 0xf;
 
-    hcec.Init.InitiatorAddress = buffer[0] >> CEC_INITIATOR_LSB_POS;
-    uint8_t destAddr = buffer[0] & 0xf;
+    for (int i = 0; i < cecbridge.retry_count; ++i)
+    {
+        if (HAL_CEC_Transmit(&hcec, destAddr, msg, len - 1, 200) == HAL_OK)
+        {
+            break;
+        }
+    }
 
-    HAL_CEC_Transmit(&hcec, destAddr, buffer, len - 1, 200);
     /* after transmission, return to stand-by mode */
     hcec.State = HAL_CEC_STATE_STANDBY_RX;
 
@@ -221,8 +241,7 @@ static void handle_usb_message(char *command)
     case 'A': // display/update the device’s current logical address and address ‘bit-field’ (also see ‘b’)
     case 'B':   // like A, but logical address gets committed to flash
     {
-        for (; *arg_ptr != '\0' && isspace(*arg_ptr); ++arg_ptr)
-            ;
+        arg_ptr = skip_white_space(arg_ptr);
 
         if (!hex2bin(&cecbridge.logical_address, arg_ptr, 1))
         {
@@ -231,10 +250,9 @@ static void handle_usb_message(char *command)
             {
                 uint8_t bit_field[2];
 
-                for (; *arg_ptr != '\0' && isspace(*arg_ptr); ++arg_ptr)
-                    ;
+                arg_ptr = skip_white_space(arg_ptr);
 
-                if (!hex2bin(cecbridge.bit_field, arg_ptr, 4))
+                if (!hex2bin(bit_field, arg_ptr, 4))
                 {
                     memcpy(cecbridge.bit_field, bit_field, 2);
                     hcec.Init.InitiatorAddress =
@@ -263,8 +281,22 @@ static void handle_usb_message(char *command)
         break;
     }
     case 'C':   // display/update the configuration bits
-        strcpy(response, "?CFG 0000\r\n"); // currently no support for higher functions
+    {
+        uint8_t configuration_bits[4];
+
+        arg_ptr = skip_white_space(arg_ptr);
+
+        if (!hex2bin(configuration_bits, arg_ptr, 4))
+        {
+            memcpy(cecbridge.configuration_bits, configuration_bits, sizeof(cecbridge.configuration_bits));
+        }
+
+        strcpy(response, "?CFG ");
+        char *response_ptr = bin2hex(response + strlen(response),
+                cecbridge.configuration_bits, 4);
+        strcpy(response_ptr, "\r\n");
         break;
+    }
     case 'M':   // mirror a text string back to the host
         strcpy(response, "?MIR");
         strcat(response, arg_ptr);
@@ -286,15 +318,13 @@ static void handle_usb_message(char *command)
     {
         uint8_t physical_address[4];
 
-        for (; *arg_ptr != '\0' && isspace(*arg_ptr); ++arg_ptr)
-            ;
+        arg_ptr = skip_white_space(arg_ptr);
 
         if (!hex2bin(physical_address, arg_ptr, 4))
         {
             if (isspace(*arg_ptr))
             {
-                for (; *arg_ptr != '\0' && isspace(*arg_ptr); ++arg_ptr)
-                    ;
+                arg_ptr = skip_white_space(arg_ptr);
 
                 if (!hex2bin(&cecbridge.device_type, arg_ptr, 1))
                 {
@@ -312,8 +342,22 @@ static void handle_usb_message(char *command)
         break;
     }
     case 'Q':   // display/update the device’s retry count
-        strcpy(response, "?QTY 1\r\n"); // retries are done by the host, so currently no support for changing it
+    {
+        uint8_t retry_count;
+
+        arg_ptr = skip_white_space(arg_ptr);
+
+        if (!hex2bin(&retry_count, arg_ptr, 1))
+        {
+            cecbridge.retry_count = retry_count;
+        }
+
+        strcpy(response, "?QTY ");
+        char *response_ptr = bin2hex(response + strlen(response),
+                &cecbridge.retry_count, 1);
+        strcpy(response_ptr, "\r\n");
         break;
+    }
     case 'R':   // report the device firmware revision level
         strcpy(response, "?REV " FIRMWARE_REVISION "\r\n");
         break;

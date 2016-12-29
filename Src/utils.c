@@ -59,3 +59,10 @@ char *bin2hex(char *dst, const void *src, size_t count)
                 dst = hex_byte_pack(dst, *_src++);
         return dst;
 }
+
+char *skip_white_space(char *str)
+{
+    for (; *str != '\0' && isspace(*str); ++str)
+        ;
+    return str;
+}
