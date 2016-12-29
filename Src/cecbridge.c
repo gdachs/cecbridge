@@ -74,21 +74,21 @@ static uint8_t promiscuousMode = 0;
 typedef struct {
     uint8_t logical_address;
     uint8_t bit_field[2];
-    uint8_t physical_address[4];
+    uint8_t physical_address[2];
     uint8_t device_type;
     uint8_t retry_count;
-    uint8_t configuration_bits[4];
+    uint8_t configuration_bits[2];
     char osd_name[15];
 } cecbridge_t;
 
 static cecbridge_t cecbridge = {
-    0xf,            // logical address, default is broadcast
-    { 0, 0 },       // bit field for masking on which logical addresses to respond
-    { 0, 0, 0, 0 }, // physical address
-    0x4,            // device type, set to playback 1
-    5,              // retry count
-    { 0, 0, 0, 0 }, // configuration bits
-    "MyDevice",     // OSD name
+    0xf,        // logical address, default is broadcast
+    { 0, 0 },   // bit field for masking on which logical addresses to respond
+    { 0, 0 },   // physical address
+    0x4,        // device type, set to playback 1
+    5,          // retry count
+    { 0, 0 },   // configuration bits
+    "MyDevice", // OSD name
 };
 
 typedef enum {
@@ -195,6 +195,30 @@ static uint8_t tx_usb_message(char *msg)
     return ret;
 }
 
+static void log_message(char *format, ...)
+{
+    char *buffer = NULL;
+    va_list aptr;
+
+    va_start(aptr, format);
+    vasprintf(&buffer, format, aptr);
+    va_end(aptr);
+
+    if (buffer != NULL)
+    {
+        char *newbuffer = NULL;
+
+        asprintf(&newbuffer, "#%s\r\n", buffer);
+
+        if (newbuffer != NULL)
+        {
+            tx_usb_message(newbuffer);
+            free(newbuffer);
+        }
+        free(buffer);
+    }
+}
+
 static void tx_cec_message(uint8_t *msg, size_t len)
 {
     char response[9] = "?STA ";
@@ -241,25 +265,24 @@ static void handle_usb_message(char *command)
     case 'A': // display/update the device’s current logical address and address ‘bit-field’ (also see ‘b’)
     case 'B':   // like A, but logical address gets committed to flash
     {
+        int logical_address;
+
         arg_ptr = skip_white_space(arg_ptr);
 
-        if (!hex2bin(&cecbridge.logical_address, arg_ptr, 1))
+        if ((logical_address = hex_to_bin(*arg_ptr++)) >= 0)
         {
+            uint8_t bit_field[2];
 
-            if (isspace(*arg_ptr))
+            hcec.Init.InitiatorAddress = cecbridge.logical_address =
+                     logical_address;
+
+            arg_ptr = skip_white_space(arg_ptr);
+
+            if (!hex2bin(bit_field, arg_ptr, 2))
             {
-                uint8_t bit_field[2];
-
-                arg_ptr = skip_white_space(arg_ptr);
-
-                if (!hex2bin(bit_field, arg_ptr, 4))
-                {
-                    memcpy(cecbridge.bit_field, bit_field, 2);
-                    hcec.Init.InitiatorAddress =
-                            cecbridge.logical_address;
-                    hcec.Init.OwnAddress = (cecbridge.bit_field[0]
-                            << 8) + cecbridge.bit_field[1];
-                }
+                memcpy(cecbridge.bit_field, bit_field, 2);
+                hcec.Init.OwnAddress = (cecbridge.bit_field[0] << 8)
+                        + cecbridge.bit_field[1];
             }
         }
 
@@ -273,10 +296,10 @@ static void handle_usb_message(char *command)
             strcpy(response, "?BDR ");
         }
 
-        char *response_ptr = bin2hex(response + strlen(response),
-                &cecbridge.logical_address, 1);
+        char *response_ptr = response + strlen(response);
+        *response_ptr++ = hex_asc_lo(cecbridge.logical_address);
         *response_ptr++ = ' ';
-        response_ptr = bin2hex(response_ptr, cecbridge.bit_field, 4);
+        response_ptr = bin2hex(response_ptr, cecbridge.bit_field, 2);
         strcpy(response_ptr, "\r\n");
         break;
     }
@@ -286,14 +309,14 @@ static void handle_usb_message(char *command)
 
         arg_ptr = skip_white_space(arg_ptr);
 
-        if (!hex2bin(configuration_bits, arg_ptr, 4))
+        if (!hex2bin(configuration_bits, arg_ptr, 2))
         {
             memcpy(cecbridge.configuration_bits, configuration_bits, sizeof(cecbridge.configuration_bits));
         }
 
         strcpy(response, "?CFG ");
         char *response_ptr = bin2hex(response + strlen(response),
-                cecbridge.configuration_bits, 4);
+                cecbridge.configuration_bits, 2);
         strcpy(response_ptr, "\r\n");
         break;
     }
@@ -316,45 +339,49 @@ static void handle_usb_message(char *command)
         break;
     case 'P':  // display/update the device’s physical address and ‘device type’
     {
-        uint8_t physical_address[4];
+        uint8_t physical_address[2];
 
         arg_ptr = skip_white_space(arg_ptr);
 
-        if (!hex2bin(physical_address, arg_ptr, 4))
+        if (!hex2bin(physical_address, arg_ptr, 2))
         {
-            if (isspace(*arg_ptr))
-            {
-                arg_ptr = skip_white_space(arg_ptr);
+            int device_type;
 
-                if (!hex2bin(&cecbridge.device_type, arg_ptr, 1))
-                {
-                    memcpy(cecbridge.physical_address, physical_address, sizeof(cecbridge.physical_address));
-                }
+            arg_ptr += 4;
+
+            memcpy(cecbridge.physical_address, physical_address,
+                    sizeof(cecbridge.physical_address));
+
+            arg_ptr = skip_white_space(arg_ptr);
+
+            if ((device_type = hex_to_bin(*arg_ptr)) >= 0)
+            {
+                cecbridge.device_type = device_type;
             }
         }
 
         strcpy(response, "?PHY ");
         char *response_ptr = bin2hex(response + strlen(response),
-                cecbridge.physical_address, 4);
+                cecbridge.physical_address, 2);
         *response_ptr++ = ' ';
-        response_ptr = bin2hex(response_ptr, &cecbridge.device_type, 1);
+        *response_ptr++ = hex_asc_lo(cecbridge.device_type);
         strcpy(response_ptr, "\r\n");
         break;
     }
     case 'Q':   // display/update the device’s retry count
     {
-        uint8_t retry_count;
+        int retry_count;
 
         arg_ptr = skip_white_space(arg_ptr);
 
-        if (!hex2bin(&retry_count, arg_ptr, 1))
+        if ((retry_count = hex_to_bin(*arg_ptr)) >= 0)
         {
             cecbridge.retry_count = retry_count;
         }
 
         strcpy(response, "?QTY ");
-        char *response_ptr = bin2hex(response + strlen(response),
-                &cecbridge.retry_count, 1);
+        char *response_ptr = response + strlen(response);
+        *response_ptr++ = hex_asc_lo(cecbridge.retry_count);
         strcpy(response_ptr, "\r\n");
         break;
     }
@@ -373,7 +400,7 @@ static void handle_usb_message(char *command)
                 continue;
             if (len == CEC_MAX_MSG_SIZE)
                 break;
-            if (!hex2bin(msg_ptr++, arg_ptr++, 2))
+            if (!hex2bin(msg_ptr++, arg_ptr++, 1))
             {
                 ++len;
             }
@@ -406,7 +433,8 @@ static void rx_cec_message()
 
     HAL_StatusTypeDef hal_status = HAL_CEC_Receive(&hcec, cec_buffer,
             200);
-    if (hal_status == HAL_TIMEOUT)
+
+    if (hal_status != HAL_OK)
     {
         return;
     }
