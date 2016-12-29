@@ -51,4 +51,6 @@ enum ErrorCode {
     CEC_ERROR,
 };
 
+#define CEC_MAX_MSG_SIZE        16
+
 #endif /* __CECBRIDGE_H */

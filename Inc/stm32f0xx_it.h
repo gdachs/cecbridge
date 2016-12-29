@@ -42,6 +42,7 @@
 
 /* External variables --------------------------------------------------------*/
 extern PCD_HandleTypeDef hpcd_USB_FS;
+extern CEC_HandleTypeDef hcec;
 
 /******************************************************************************/
 /*            Cortex-M0 Processor Interruption and Exception Handlers         */ 
@@ -132,7 +133,7 @@ void CEC_CAN_IRQHandler(void)
   /* USER CODE BEGIN CEC_CAN_IRQn 0 */
 
   /* USER CODE END CEC_CAN_IRQn 0 */
-  HAL_CEC_IRQHandler(getCecHandle());
+  HAL_CEC_IRQHandler(&hcec);
   /* USER CODE BEGIN CEC_CAN_IRQn 1 */
 
   /* USER CODE END CEC_CAN_IRQn 1 */
