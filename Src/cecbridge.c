@@ -65,8 +65,6 @@ static void MX_GPIO_Init(void);
 /* Private function prototypes -----------------------------------------------*/
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 
-static uint8_t promiscuousMode = 0;
-
 #define FIRMWARE_REVISION "0.0.1"
 
 #define BUF_SIZE 64
@@ -175,7 +173,8 @@ static void init_cec(void)
     hcec.Init.SignalFreeTimeOption = CEC_SFT_START_ON_TXSOM;
     hcec.Init.ListenMode = CEC_FULL_LISTENING_MODE;
     hcec.Init.InitiatorAddress = cecbridge.logical_address;
-    hcec.Init.OwnAddress = (cecbridge.bit_field[0] << 8) + cecbridge.bit_field[1];
+    hcec.Init.OwnAddress = ((cecbridge.bit_field[0] << 8)
+            + cecbridge.bit_field[1]) | (1 << cecbridge.logical_address);
 
     if (HAL_CEC_Init(&hcec) != HAL_OK)
     {
@@ -183,7 +182,7 @@ static void init_cec(void)
     }
 }
 
-static uint8_t tx_usb_message(char *msg)
+uint8_t tx_usb_message(char *msg)
 {
     uint8_t ret = USBD_OK;
 
@@ -219,23 +218,67 @@ static void log_message(char *format, ...)
     }
 }
 
+static void rx_cec_message()
+{
+    uint8_t cec_buffer[CEC_MAX_MSG_SIZE];
+    char response[BUF_SIZE] = "?REC";
+    char *response_ptr = response + strlen(response);
+
+    HAL_StatusTypeDef hal_status = HAL_CEC_Receive(&hcec, cec_buffer, 200);
+    hcec.State = HAL_CEC_STATE_READY;
+
+    if (hal_status == HAL_TIMEOUT || hal_status == HAL_BUSY)
+    {
+        return;
+    }
+
+    for (int i = 0; i <= hcec.RxXferSize; ++i)
+    {
+        *response_ptr++ = ' ';
+        response_ptr = bin2hex(response_ptr, &cec_buffer[i], 1);
+    }
+    *response_ptr++ = ' ';
+
+    if (hcec.ErrorCode == HAL_CEC_ERROR_NONE)
+    {
+        *response_ptr++ = '1';
+    }
+    else if (hcec.ErrorCode == HAL_CEC_ERROR_RXACKE)
+    {
+        *response_ptr++ = '2';
+    }
+    else
+    {
+        *response_ptr++ = '3';
+        *response_ptr++ = ' ';
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 24) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 16) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 8) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, hcec.ErrorCode & 0xff);
+    }
+    strcpy(response_ptr, "\r\n");
+
+    tx_usb_message(response);
+}
+
 static void tx_cec_message(uint8_t *msg, size_t len)
 {
-    char response[9] = "?STA ";
+//  TODO:  char response[9] = "?STA ";
+    char response[128] = "?STA ";
     char *response_ptr = response + strlen(response);
     hcec.Init.InitiatorAddress = msg[0] >> CEC_INITIATOR_LSB_POS;
     uint8_t destAddr = msg[0] & 0xf;
 
     for (int i = 0; i < cecbridge.retry_count; ++i)
     {
-        if (HAL_CEC_Transmit(&hcec, destAddr, msg, len - 1, 200) == HAL_OK)
+        HAL_StatusTypeDef state  = HAL_CEC_Transmit(&hcec, destAddr, &msg[1], len - 1, 200);
+        hcec.State = HAL_CEC_STATE_READY;
+
+        if (state == HAL_OK)
         {
             break;
         }
     }
-
-    /* after transmission, return to stand-by mode */
-    hcec.State = HAL_CEC_STATE_STANDBY_RX;
 
     if (hcec.ErrorCode == HAL_CEC_ERROR_NONE)
     {
@@ -248,6 +291,11 @@ static void tx_cec_message(uint8_t *msg, size_t len)
     else
     {
         *response_ptr++ = '3';
+        *response_ptr++ = ' ';
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 24) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 16) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 8) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, hcec.ErrorCode & 0xff);
     }
     strcpy(response_ptr, "\r\n");
 
@@ -273,17 +321,15 @@ static void handle_usb_message(char *command)
         {
             uint8_t bit_field[2];
 
-            hcec.Init.InitiatorAddress = cecbridge.logical_address =
-                     logical_address;
+            cecbridge.logical_address = logical_address;
 
             arg_ptr = skip_white_space(arg_ptr);
 
             if (!hex2bin(bit_field, arg_ptr, 2))
             {
                 memcpy(cecbridge.bit_field, bit_field, 2);
-                hcec.Init.OwnAddress = (cecbridge.bit_field[0] << 8)
-                        + cecbridge.bit_field[1];
             }
+            init_cec();
         }
 
         if (cmd == 'A')
@@ -425,48 +471,6 @@ static void handle_usb_message(char *command)
     tx_usb_message(response);
 }
 
-static void rx_cec_message()
-{
-    uint8_t cec_buffer[CEC_MAX_MSG_SIZE];
-    char response[BUF_SIZE] = "?REC";
-    char *response_ptr = response + strlen(response);
-
-    HAL_StatusTypeDef hal_status = HAL_CEC_Receive(&hcec, cec_buffer,
-            200);
-
-    if (hal_status != HAL_OK)
-    {
-        return;
-    }
-    if (promiscuousMode || (*hcec.pRxBuffPtr & 0xf) == 0xf
-            || hcec.Init.OwnAddress
-                    == (*hcec.pRxBuffPtr & 0xf))
-    {
-        for (int i = 0; i <= hcec.RxXferSize; ++i)
-        {
-            *response_ptr++ = ' ';
-            response_ptr = bin2hex(response_ptr, &cec_buffer[i], 1);
-        }
-        *response_ptr++ = ' ';
-
-        if (hcec.ErrorCode == HAL_CEC_ERROR_NONE)
-        {
-            *response_ptr++ = '1';
-        }
-        else if (hcec.ErrorCode == HAL_CEC_ERROR_RXACKE)
-        {
-            *response_ptr++ = '2';
-        }
-        else
-        {
-            *response_ptr++ = '3';
-        }
-        strcpy(response_ptr, "\r\n");
-
-        tx_usb_message(response);
-    }
-}
-
 int main(void)
 {
     /* MCU Configuration----------------------------------------------------------*/
@@ -483,8 +487,6 @@ int main(void)
     MX_USB_DEVICE_Init();
 
     init_cec();
-
-    memset(&hcec, 0, sizeof(hcec));
 
     while (1)
     {
