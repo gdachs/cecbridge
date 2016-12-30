@@ -437,9 +437,11 @@ static void handle_usb_message(char *command)
         arg_ptr = skip_white_space(arg_ptr);
         if (isxdigit(*arg_ptr))
         {
-            if ((*msg_ptr = hex_to_bin(*arg_ptr++)) >= 0)
+            uint8_t dest;
+
+            if ((dest = hex_to_bin(*arg_ptr++)) >= 0)
             {
-                *msg_ptr++ = (cecbridge.logical_address << 4) | *msg_ptr;
+                *msg_ptr++ = (cecbridge.logical_address << 4) | dest;
                 ++len;
 
                 for (; *arg_ptr; arg_ptr++)
@@ -565,36 +567,3 @@ void Error_Handler(void)
 {
     // currently empty
 }
-
-// ======================== unused callbacks  ===================
-
-/**
- * @brief Tx Transfer completed callback
- * @param hcec: CEC handle
- * @retval None
- */
-void HAL_CEC_TxCpltCallback(CEC_HandleTypeDef *hcec)
-{
-    // not used, just to make the linker happy
-}
-
-/**
- * @brief Rx Transfer completed callback
- * @param hcec: CEC handle
- * @retval None
- */
-void HAL_CEC_RxCpltCallback(CEC_HandleTypeDef *hcec)
-{
-    // not used, just to make the linker happy
-}
-
-/**
- * @brief CEC error callbacks
- * @param hcec: CEC handle
- * @retval None
- */
-void HAL_CEC_ErrorCallback(CEC_HandleTypeDef *hcec)
-{
-    // not used, just to make the linker happy
-}
-
