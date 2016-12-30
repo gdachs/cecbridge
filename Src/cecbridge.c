@@ -263,8 +263,7 @@ static void rx_cec_message()
 
 static void tx_cec_message(uint8_t *msg, size_t len)
 {
-//  TODO:  char response[9] = "?STA ";
-    char response[128] = "?STA ";
+    char response[9] = "?STA ";
     char *response_ptr = response + strlen(response);
     hcec.Init.InitiatorAddress = msg[0] >> CEC_INITIATOR_LSB_POS;
     uint8_t destAddr = msg[0] & 0xf;
@@ -291,11 +290,6 @@ static void tx_cec_message(uint8_t *msg, size_t len)
     else
     {
         *response_ptr++ = '3';
-        *response_ptr++ = ' ';
-        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 24) & 0xff);
-        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 16) & 0xff);
-        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 8) & 0xff);
-        response_ptr = hex_byte_pack(response_ptr, hcec.ErrorCode & 0xff);
     }
     strcpy(response_ptr, "\r\n");
 
@@ -440,23 +434,32 @@ static void handle_usb_message(char *command)
         uint8_t *msg_ptr = msg;
         int len = 0;
 
-        for (; *arg_ptr; arg_ptr++)
+        arg_ptr = skip_white_space(arg_ptr);
+        if (isxdigit(*arg_ptr))
         {
-            if (!isxdigit(*arg_ptr))
-                continue;
-            if (len == CEC_MAX_MSG_SIZE)
-                break;
-            if (!hex2bin(msg_ptr++, arg_ptr++, 1))
+            if ((*msg_ptr = hex_to_bin(*arg_ptr++)) >= 0)
             {
+                *msg_ptr++ = (cecbridge.logical_address << 4) | *msg_ptr;
                 ++len;
-            }
-            else
-            {
-                len = 0;
-                break;
+
+                for (; *arg_ptr; arg_ptr++)
+                {
+                    if (!isxdigit(*arg_ptr))
+                        continue;
+                    if (len == CEC_MAX_MSG_SIZE)
+                        break;
+                    if (!hex2bin(msg_ptr++, arg_ptr++, 1))
+                    {
+                        ++len;
+                    }
+                    else
+                    {
+                        len = 0;
+                        break;
+                    }
+                }
             }
         }
-
         if (len > 0)
         {
             tx_cec_message(msg, len);
