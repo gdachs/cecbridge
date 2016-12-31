@@ -433,32 +433,35 @@ static void handle_usb_message(char *command)
         uint8_t msg[CEC_MAX_MSG_SIZE];
         uint8_t *msg_ptr = msg;
         int len = 0;
+        uint8_t nibble;
 
         arg_ptr = skip_white_space(arg_ptr);
-        if (isxdigit(*arg_ptr))
+        if ((nibble = hex_to_bin(*arg_ptr++)) >= 0)
         {
-            uint8_t dest;
+            *msg_ptr++ = (cecbridge.logical_address << 4) | nibble;
+            ++len;
 
-            if ((dest = hex_to_bin(*arg_ptr++)) >= 0)
+            for (; *arg_ptr; arg_ptr++)
             {
-                *msg_ptr++ = (cecbridge.logical_address << 4) | dest;
-                ++len;
-
-                for (; *arg_ptr; arg_ptr++)
+                if (!isxdigit(*arg_ptr))
+                    continue;
+                if (len == CEC_MAX_MSG_SIZE)
+                    break;
+                if ((nibble = hex_to_bin(*arg_ptr++)) >= 0)
                 {
-                    if (!isxdigit(*arg_ptr))
-                        continue;
-                    if (len == CEC_MAX_MSG_SIZE)
-                        break;
-                    if (!hex2bin(msg_ptr++, arg_ptr++, 1))
+                    *msg_ptr = nibble;
+
+                    if ((nibble = hex_to_bin(*arg_ptr)) >= 0)
                     {
-                        ++len;
+                        *msg_ptr = (*msg_ptr << 4) | nibble;
                     }
-                    else
-                    {
-                        len = 0;
-                        break;
-                    }
+                    ++msg_ptr;
+                    ++len;
+                }
+                else
+                {
+                    len = 0;
+                    break;
                 }
             }
         }
