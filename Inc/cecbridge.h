@@ -2,7 +2,7 @@
  * cecbridge for SolidPC
  *
  * Copyright 2016 Gerald Dachs <gda@dachsweb.de>
- * based on work from klimemt
+ * based on work from kliment
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
