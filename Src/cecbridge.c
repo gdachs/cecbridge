@@ -256,8 +256,7 @@ static void rx_cec_message()
         response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 8) & 0xff);
         response_ptr = hex_byte_pack(response_ptr, hcec.ErrorCode & 0xff);
     }
-    *response_ptr++ = '~';
-    *response_ptr = '\0';
+    strcpy(response_ptr, "\r\n");
 
     tx_usb_message(response);
 }
@@ -292,8 +291,8 @@ static void tx_cec_message(uint8_t *msg, size_t len)
     {
         *response_ptr++ = '3';
     }
-    *response_ptr++ = '~';
-    *response_ptr = '\0';
+    strcpy(response_ptr, "\r\n");
+
     tx_usb_message(response);
 }
 
@@ -341,8 +340,7 @@ static void handle_usb_message(char *command)
         *response_ptr++ = hex_asc_lo(cecbridge.logical_address);
         *response_ptr++ = ' ';
         response_ptr = bin2hex(response_ptr, cecbridge.bit_field, 2);
-        *response_ptr++ = '~';
-        *response_ptr = '\0';
+        strcpy(response_ptr, "\r\n");
         break;
     }
     case 'C':   // display/update the configuration bits
@@ -359,14 +357,13 @@ static void handle_usb_message(char *command)
         strcpy(response, "?CFG ");
         char *response_ptr = bin2hex(response + strlen(response),
                 cecbridge.configuration_bits, 2);
-        *response_ptr++ = '~';
-        *response_ptr = '\0';
+        strcpy(response_ptr, "\r\n");
         break;
     }
     case 'M':   // mirror a text string back to the host
         strcpy(response, "?MIR");
         strcat(response, arg_ptr);
-        strcat(response, "~");
+        strcat(response, "\r\n");
         break;
     case 'O':   // display/update the device’s OSD (on screen display) name
         if (*arg_ptr != '\0')
@@ -378,7 +375,7 @@ static void handle_usb_message(char *command)
 
         strcpy(response, "?OSD ");
         strcat(response, cecbridge.osd_name);
-        strcat(response, "~");
+        strcat(response, "\r\n");
         break;
     case 'P':  // display/update the device’s physical address and ‘device type’
     {
@@ -408,8 +405,7 @@ static void handle_usb_message(char *command)
                 cecbridge.physical_address, 2);
         *response_ptr++ = ' ';
         *response_ptr++ = hex_asc_lo(cecbridge.device_type);
-        *response_ptr++ = '~';
-        *response_ptr = '\0';
+        strcpy(response_ptr, "\r\n");
         break;
     }
     case 'Q':   // display/update the device’s retry count
@@ -426,12 +422,11 @@ static void handle_usb_message(char *command)
         strcpy(response, "?QTY ");
         char *response_ptr = response + strlen(response);
         *response_ptr++ = hex_asc_lo(cecbridge.retry_count);
-        *response_ptr++ = '~';
-        *response_ptr = '\0';
+        strcpy(response_ptr, "\r\n");
         break;
     }
     case 'R':   // report the device firmware revision level
-        strcpy(response, "?REV " FIRMWARE_REVISION "~");
+        strcpy(response, "?REV " FIRMWARE_REVISION "\r\n");
         break;
     case 'X':   // transmit a CEC frame on the bus
     {
