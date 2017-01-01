@@ -36,7 +36,7 @@ static void MX_GPIO_Init(void);
 /* Private function prototypes -----------------------------------------------*/
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 
-#define FIRMWARE_REVISION "0.0.1"
+#define FIRMWARE_REVISION "1"
 
 #define BUF_SIZE 64
 
