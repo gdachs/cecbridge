@@ -21,6 +21,7 @@
 #include "stm32f0xx_hal.h"
 #include "stm32f0xx_hal_cec.h"
 #include "stm32f0xx_it.h"
+#include "stm32f0xx_hal_conf.h"
 
 #include "usb_device.h"
 
@@ -39,6 +40,22 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 #define FIRMWARE_REVISION "1"
 
 #define BUF_SIZE 64
+
+#define OPCODE_GIVE_DECK_STATUS         0x1A    // give deck status
+#define OPCODE_DECK_STATUS              0x1B    // deck status
+#define OPCODE_REPORT_OSD_NAME          0x46    // report OSD name
+#define OPCODE_SET_OSD_NAME             0x47    // set OSD name
+#define OPCODE_GIVE_PHYSICAL_ADDRESS    0x83    // give physical address (and device type)
+#define OPCODE_REPORT_PHYSICAL_ADDRESS  0x84    // report physical address (and device type)
+#define OPCODE_REPORT_VENDOR_ID         0x8C    // report vendor id (answer is ‘not supported’)
+#define OPCODE_MENU_REQUEST             0x8D    // ‘menu’ request
+#define OPCODE_MENU_STATUS              0x8E    // respond to ‘menu’ request saying menu is active.
+                                                // This allows some commands to be forwarded from
+                                                // the remote control to the device.
+#define OPCODE_GIVE_DEVICE_POWER_STATUS 0x8F    // give device power status
+#define OPCODE_REPORT_POWER_STATUS      0x90    // report power status
+#define OPCODE_GET_CEC_VERSION          0x9F    // CEC version
+#define OPCODE_CEC_VERSION              0x9E    // give CEC version
 
 typedef struct {
     uint8_t logical_address;
@@ -153,6 +170,16 @@ static void init_cec(void)
     }
 }
 
+static void host_wakeup()
+{
+    for (int i = 0; i < 2; ++i)
+    {
+        USB->CNTR |= USB_CNTR_RESUME;
+        HAL_Delay(10);
+        USB->CNTR &= (uint16_t) (~(USB_CNTR_RESUME));
+    }
+}
+
 uint8_t tx_usb_message(char *msg)
 {
     uint8_t ret = USBD_OK;
@@ -189,49 +216,6 @@ static void log_message(char *format, ...)
     }
 }
 
-static void rx_cec_message()
-{
-    uint8_t cec_buffer[CEC_MAX_MSG_SIZE];
-    char response[BUF_SIZE] = "?REC";
-    char *response_ptr = response + strlen(response);
-
-    HAL_StatusTypeDef hal_status = HAL_CEC_Receive(&hcec, cec_buffer, 200);
-    hcec.State = HAL_CEC_STATE_READY;
-
-    if (hal_status == HAL_TIMEOUT || hal_status == HAL_BUSY)
-    {
-        return;
-    }
-
-    for (int i = 0; i <= hcec.RxXferSize; ++i)
-    {
-        *response_ptr++ = ' ';
-        response_ptr = bin2hex(response_ptr, &cec_buffer[i], 1);
-    }
-    *response_ptr++ = ' ';
-
-    if (hcec.ErrorCode == HAL_CEC_ERROR_NONE)
-    {
-        *response_ptr++ = '1';
-    }
-    else if (hcec.ErrorCode == HAL_CEC_ERROR_RXACKE)
-    {
-        *response_ptr++ = '2';
-    }
-    else
-    {
-        *response_ptr++ = '3';
-        *response_ptr++ = ' ';
-        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 24) & 0xff);
-        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 16) & 0xff);
-        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 8) & 0xff);
-        response_ptr = hex_byte_pack(response_ptr, hcec.ErrorCode & 0xff);
-    }
-    strcpy(response_ptr, "\r\n");
-
-    tx_usb_message(response);
-}
-
 static void tx_cec_message(uint8_t *msg, size_t len)
 {
     char response[9] = "?STA ";
@@ -261,6 +245,119 @@ static void tx_cec_message(uint8_t *msg, size_t len)
     else
     {
         *response_ptr++ = '3';
+    }
+    strcpy(response_ptr, "\r\n");
+
+    tx_usb_message(response);
+}
+
+static uint8_t higher_level_handler(uint8_t *cec_buffer)
+{
+    uint8_t buf[CEC_MAX_MSG_SIZE];
+    uint8_t *buf_ptr = buf;
+    uint8_t opcode = cec_buffer[1];
+    uint8_t initiator = cec_buffer[0] >> 4;
+    uint8_t destination = cec_buffer[0] & 0x0f;
+    uint8_t handled = 1;
+
+    if (destination != cecbridge.logical_address || destination != 0x0f)
+    {
+        return 0;
+    }
+
+    *buf_ptr++ = cecbridge.logical_address << 4 | initiator;
+
+    switch (opcode)
+    {
+    case OPCODE_GIVE_DECK_STATUS:                       // deck status
+        *buf_ptr++ = OPCODE_DECK_STATUS;
+        *buf_ptr++ = 0;
+        break;
+    case OPCODE_REPORT_OSD_NAME:                        // report OSD name
+        *buf_ptr++ = OPCODE_SET_OSD_NAME;
+        memcpy(buf_ptr, cecbridge.osd_name, strlen(cecbridge.osd_name));
+        buf_ptr += strlen(cecbridge.osd_name);
+        break;
+    case OPCODE_GIVE_PHYSICAL_ADDRESS:                  // report physical address (and device type)
+        buf[0] = cecbridge.logical_address << 4 | 0x0f; // broadcast to all
+        *buf_ptr++ = OPCODE_REPORT_PHYSICAL_ADDRESS;
+        *buf_ptr++ = cecbridge.physical_address[0];
+        *buf_ptr++ = cecbridge.physical_address[1];
+        *buf_ptr++ = cecbridge.device_type;
+        break;
+    case OPCODE_REPORT_VENDOR_ID:                       // report vendor id (answer is ‘not supported’)
+        *buf_ptr++ = 0;                                 // feature abort
+        *buf_ptr++ = 0x1b;
+        *buf_ptr++ = 0;
+        break;
+    case OPCODE_MENU_REQUEST:                           // respond to ‘menu’ request saying menu is active.
+        *buf_ptr++ = OPCODE_MENU_STATUS;
+        *buf_ptr++ = 0;                                 // active
+        break;
+    case OPCODE_GIVE_DEVICE_POWER_STATUS:               // report power status
+        *buf_ptr++ = OPCODE_REPORT_POWER_STATUS;
+        *buf_ptr++ = 2;                                 // in transition Standby to On
+        break;
+    case OPCODE_GET_CEC_VERSION:                        // report CEC version
+        *buf_ptr++ = OPCODE_CEC_VERSION;
+        *buf_ptr++ = 5;
+        break;
+    default:
+        handled = 0;
+    }
+
+    if (handled)
+    {
+        host_wakeup();
+
+        tx_cec_message(buf, buf_ptr - buf);
+    }
+
+    return handled;
+}
+
+static void rx_cec_message()
+{
+    uint8_t cec_buffer[CEC_MAX_MSG_SIZE];
+    char response[BUF_SIZE] = "?REC";
+    char *response_ptr = response + strlen(response);
+
+    HAL_StatusTypeDef hal_status = HAL_CEC_Receive(&hcec, cec_buffer, 200);
+    hcec.State = HAL_CEC_STATE_READY;
+
+    if (hal_status == HAL_TIMEOUT || hal_status == HAL_BUSY)
+    {
+        return;
+    }
+
+    if (higher_level_handler(cec_buffer))
+    {
+        return;
+    }
+
+    for (int i = 0; i <= hcec.RxXferSize; ++i)
+    {
+        *response_ptr++ = ' ';
+        response_ptr = bin2hex(response_ptr, &cec_buffer[i], 1);
+    }
+    *response_ptr++ = ' ';
+
+    if (hcec.ErrorCode == HAL_CEC_ERROR_NONE)
+    {
+        *response_ptr++ = '1';
+    }
+    else if (hcec.ErrorCode == HAL_CEC_ERROR_RXACKE)
+    {
+        *response_ptr++ = '2';
+    }
+    else
+    {
+        *response_ptr++ = '3';
+        *response_ptr++ = ' ';
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 24) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 16) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, (hcec.ErrorCode >> 8) & 0xff);
+        response_ptr = hex_byte_pack(response_ptr, hcec.ErrorCode & 0xff);
     }
     strcpy(response_ptr, "\r\n");
 
