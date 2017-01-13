@@ -57,6 +57,11 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 #define OPCODE_GET_CEC_VERSION          0x9F    // CEC version
 #define OPCODE_CEC_VERSION              0x9E    // give CEC version
 
+#define HIGHER_LEVEL_PROTOCOL_FLAG      (1<<0)  // enables higher level protocol if set
+#define LOGICAL_ADDRESS_DETECTION_FLAG  (1<<1)  // enables logical address detection is
+#define HOST_WAKEUP_FLAG                (1<<2)  // allows wakeup of host if set and
+                                                // higher level protocoll is set too
+
 static cecbridge_t cecbridge = {
     0xf,        // logical address, default is broadcast
     { 0, 0 },   // bit field for masking on which logical addresses to respond
@@ -254,66 +259,68 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
     uint8_t opcode = cec_buffer[1];
     uint8_t initiator = cec_buffer[0] >> 4;
     uint8_t destination = cec_buffer[0] & 0x0f;
-    uint8_t handled = 1;
+    uint8_t handled = 0;
 
-    if (destination != cecbridge.logical_address && destination != 0x0f)
+    if ((cecbridge.configuration_bits[1] & HIGHER_LEVEL_PROTOCOL_FLAG)
+            && (destination == cecbridge.logical_address || destination == 0x0f))
     {
-        return 0;
-    }
+        handled = 1;
 
-    *buf_ptr++ = cecbridge.logical_address << 4 | initiator;
+        *buf_ptr++ = cecbridge.logical_address << 4 | initiator;
 
-    switch (opcode)
-    {
-    case OPCODE_GIVE_DECK_STATUS:                       // deck status
-        *buf_ptr++ = OPCODE_DECK_STATUS;
-        *buf_ptr++ = 0;
-        break;
-    case OPCODE_REPORT_OSD_NAME:                        // report OSD name
-        *buf_ptr++ = OPCODE_SET_OSD_NAME;
+        switch (opcode)
+        {
+        case OPCODE_GIVE_DECK_STATUS:                       // deck status
+            *buf_ptr++ = OPCODE_DECK_STATUS;
+            *buf_ptr++ = 0x1a;                              // Stop
+            break;
+        case OPCODE_REPORT_OSD_NAME:                        // report OSD name
+            *buf_ptr++ = OPCODE_SET_OSD_NAME;
 #if 0
-        sprintf(buf_ptr, "LA%02xDE%02x", cecbridge.logical_address, destination);
-        buf_ptr += strlen(buf_ptr);
+            sprintf(buf_ptr, "LA%02xDE%02x", cecbridge.logical_address, destination);
+            buf_ptr += strlen(buf_ptr);
 #endif
-        memcpy(buf_ptr, cecbridge.osd_name, strlen(cecbridge.osd_name));
-        buf_ptr += strlen(cecbridge.osd_name);
-        break;
-    case OPCODE_GIVE_PHYSICAL_ADDRESS:                  // report physical address (and device type)
-        buf[0] = cecbridge.logical_address << 4 | 0x0f; // broadcast to all
-        *buf_ptr++ = OPCODE_REPORT_PHYSICAL_ADDRESS;
-        *buf_ptr++ = cecbridge.physical_address[0];
-        *buf_ptr++ = cecbridge.physical_address[1];
-        *buf_ptr++ = cecbridge.device_type;
-        break;
-    case OPCODE_REPORT_VENDOR_ID:                       // report vendor id (answer is ‘not supported’)
-        *buf_ptr++ = 0;                                 // feature abort
-        *buf_ptr++ = 0x1b;
-        *buf_ptr++ = 0;
-        break;
-    case OPCODE_MENU_REQUEST:                           // respond to ‘menu’ request saying menu is active.
-        *buf_ptr++ = OPCODE_MENU_STATUS;
-        *buf_ptr++ = 0;                                 // active
-        break;
-    case OPCODE_GIVE_DEVICE_POWER_STATUS:               // report power status
-        *buf_ptr++ = OPCODE_REPORT_POWER_STATUS;
-        *buf_ptr++ = 2;                                 // in transition Standby to On
-        break;
-    case OPCODE_GET_CEC_VERSION:                        // report CEC version
-        *buf_ptr++ = OPCODE_CEC_VERSION;
-        *buf_ptr++ = 5;
-        break;
-    default:
-        handled = 0;
-    }
+            memcpy(buf_ptr, cecbridge.osd_name, strlen(cecbridge.osd_name));
+            buf_ptr += strlen(cecbridge.osd_name);
+            break;
+        case OPCODE_GIVE_PHYSICAL_ADDRESS: // report physical address (and device type)
+            buf[0] = cecbridge.logical_address << 4 | 0x0f; // broadcast to all
+            *buf_ptr++ = OPCODE_REPORT_PHYSICAL_ADDRESS;
+            *buf_ptr++ = cecbridge.physical_address[0];
+            *buf_ptr++ = cecbridge.physical_address[1];
+            *buf_ptr++ = cecbridge.device_type;
+            break;
+        case OPCODE_REPORT_VENDOR_ID: // report vendor id (answer is ‘not supported’)
+            *buf_ptr++ = 0;                                 // feature abort
+            *buf_ptr++ = 0x1b;
+            *buf_ptr++ = 0;
+            break;
+        case OPCODE_MENU_REQUEST: // respond to ‘menu’ request saying menu is active.
+            *buf_ptr++ = OPCODE_MENU_STATUS;
+            *buf_ptr++ = 0;                                 // active
+            break;
+        case OPCODE_GIVE_DEVICE_POWER_STATUS:             // report power status
+            *buf_ptr++ = OPCODE_REPORT_POWER_STATUS;
+            *buf_ptr++ = cecbridge.host_power_state ? 0 : 2;
+            break;
+        case OPCODE_GET_CEC_VERSION:                       // report CEC version
+            *buf_ptr++ = OPCODE_CEC_VERSION;
+            *buf_ptr++ = 5;
+            break;
+        default:
+            handled = 0;
+        }
 
-    if (handled)
-    {
-        if (!cecbridge.host_power_state)
+        if (handled)
+        {
+            tx_cec_message(buf, buf_ptr - buf);
+        }
+
+        if (!cecbridge.host_power_state
+                && (cecbridge.configuration_bits[1] & HOST_WAKEUP_FLAG))
         {
             host_wakeup();
         }
-
-        tx_cec_message(buf, buf_ptr - buf);
     }
 
     return handled;
