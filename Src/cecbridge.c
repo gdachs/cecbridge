@@ -57,16 +57,6 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 #define OPCODE_GET_CEC_VERSION          0x9F    // CEC version
 #define OPCODE_CEC_VERSION              0x9E    // give CEC version
 
-typedef struct {
-    uint8_t logical_address;
-    uint8_t bit_field[2];
-    uint8_t physical_address[2];
-    uint8_t device_type;
-    uint8_t retry_count;
-    uint8_t configuration_bits[2];
-    char osd_name[15];
-} cecbridge_t;
-
 static cecbridge_t cecbridge = {
     0xf,        // logical address, default is broadcast
     { 0, 0 },   // bit field for masking on which logical addresses to respond
@@ -75,6 +65,7 @@ static cecbridge_t cecbridge = {
     5,          // retry count
     { 0, 0 },   // configuration bits
     "MyDevice", // OSD name
+    1,          // Host power state is on
 };
 
 typedef enum {
@@ -91,6 +82,11 @@ typedef struct {
 static usb_buffer_t usb_in_buffer = { "", buf_empty };
 
 CEC_HandleTypeDef hcec;
+
+cecbridge_t *get_cecbridge()
+{
+    return &cecbridge;
+}
 
 /** System Clock Configuration
  */
@@ -260,7 +256,7 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
     uint8_t destination = cec_buffer[0] & 0x0f;
     uint8_t handled = 1;
 
-    if (destination != cecbridge.logical_address || destination != 0x0f)
+    if (destination != cecbridge.logical_address && destination != 0x0f)
     {
         return 0;
     }
@@ -275,6 +271,10 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
         break;
     case OPCODE_REPORT_OSD_NAME:                        // report OSD name
         *buf_ptr++ = OPCODE_SET_OSD_NAME;
+#if 0
+        sprintf(buf_ptr, "LA%02xDE%02x", cecbridge.logical_address, destination);
+        buf_ptr += strlen(buf_ptr);
+#endif
         memcpy(buf_ptr, cecbridge.osd_name, strlen(cecbridge.osd_name));
         buf_ptr += strlen(cecbridge.osd_name);
         break;
@@ -308,7 +308,10 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
 
     if (handled)
     {
-        host_wakeup();
+        if (!cecbridge.host_power_state)
+        {
+            host_wakeup();
+        }
 
         tx_cec_message(buf, buf_ptr - buf);
     }

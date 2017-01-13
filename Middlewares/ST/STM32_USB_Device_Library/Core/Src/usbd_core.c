@@ -27,6 +27,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "usbd_core.h"
+#include "cecbridge.h"
 
 /** @addtogroup STM32_USBD_DEVICE_LIBRARY
 * @{
@@ -465,6 +466,9 @@ USBD_StatusTypeDef USBD_LL_Suspend(USBD_HandleTypeDef  *pdev)
 {
   pdev->dev_old_state =  pdev->dev_state;
   pdev->dev_state  = USBD_STATE_SUSPENDED;
+
+  get_cecbridge()->host_power_state = 0; // Host gets off
+
   return USBD_OK;
 }
 
@@ -478,6 +482,9 @@ USBD_StatusTypeDef USBD_LL_Suspend(USBD_HandleTypeDef  *pdev)
 USBD_StatusTypeDef USBD_LL_Resume(USBD_HandleTypeDef  *pdev)
 {
   pdev->dev_state = pdev->dev_old_state;  
+
+  get_cecbridge()->host_power_state = 1; // Host gets on
+
   return USBD_OK;
 }
 

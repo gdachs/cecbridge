@@ -24,4 +24,17 @@ enum ErrorCode {
 
 #define CEC_MAX_MSG_SIZE        16
 
+typedef struct {
+    uint8_t logical_address;
+    uint8_t bit_field[2];
+    uint8_t physical_address[2];
+    uint8_t device_type;
+    uint8_t retry_count;
+    uint8_t configuration_bits[2];
+    char osd_name[15];
+    uint8_t host_power_state;
+} cecbridge_t;
+
+cecbridge_t *get_cecbridge();
+
 #endif /* __CECBRIDGE_H */
