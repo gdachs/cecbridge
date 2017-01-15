@@ -276,10 +276,6 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
             break;
         case OPCODE_REPORT_OSD_NAME:                        // report OSD name
             *buf_ptr++ = OPCODE_SET_OSD_NAME;
-#if 0
-            sprintf(buf_ptr, "LA%02xDE%02x", cecbridge.logical_address, destination);
-            buf_ptr += strlen(buf_ptr);
-#endif
             memcpy(buf_ptr, cecbridge.osd_name, strlen(cecbridge.osd_name));
             buf_ptr += strlen(cecbridge.osd_name);
             break;
@@ -314,12 +310,12 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
         if (handled)
         {
             tx_cec_message(buf, buf_ptr - buf);
-        }
 
-        if (!cecbridge.host_power_state
-                && (cecbridge.configuration_bits[1] & HOST_WAKEUP_FLAG))
-        {
-            host_wakeup();
+            if (!cecbridge.host_power_state
+                    && (cecbridge.configuration_bits[1] & HOST_WAKEUP_FLAG))
+            {
+                host_wakeup();
+            }
         }
     }
 
