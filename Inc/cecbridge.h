@@ -32,9 +32,10 @@ typedef struct {
     uint8_t retry_count;
     uint8_t configuration_bits[2];
     char osd_name[15];
-    uint8_t host_power_state;
 } cecbridge_t;
 
-cecbridge_t *get_cecbridge();
+void set_host_power_state(int8_t state);
+
+void FLASH_PageErase(uint32_t PageAddress);
 
 #endif /* __CECBRIDGE_H */

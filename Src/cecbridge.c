@@ -62,16 +62,22 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 #define HOST_WAKEUP_FLAG                (1<<2)  // allows wakeup of host if set and
                                                 // higher level protocoll is set too
 
-static cecbridge_t cecbridge = {
-    0xf,        // logical address, default is broadcast
-    { 0, 0 },   // bit field for masking on which logical addresses to respond
-    { 0, 0 },   // physical address
-    0x4,        // device type, set to playback 1
-    5,          // retry count
-    { 0, 0 },   // configuration bits
-    "MyDevice", // OSD name
-    1,          // Host power state is on
-};
+__attribute__((__section__(".persistent")))
+const volatile static uint32_t flash[(sizeof(cecbridge_t) + sizeof(uint32_t)) / sizeof(uint32_t)] = { 0xdeadbeef };
+
+static cecbridge_t cecbridge2persist = {
+        0xf,        // logical address, default is broadcast
+        { 0, 0 },   // bit field for masking on which logical addresses to respond
+        { 0, 0 },   // physical address
+        0x4,        // device type, set to playback 1
+        5,          // retry count
+        { 0, 0 },   // configuration bits
+        "MyDevice", // OSD name
+    };
+
+static cecbridge_t cecbridge;
+
+static int8_t host_power_state = 1;          // Host power state is on
 
 typedef enum {
     buf_empty,      // buffer is empty
@@ -88,9 +94,14 @@ static usb_buffer_t usb_in_buffer = { "", buf_empty };
 
 CEC_HandleTypeDef hcec;
 
-cecbridge_t *get_cecbridge()
+void set_host_power_state(int8_t state)
 {
-    return &cecbridge;
+    host_power_state = state;
+}
+
+int8_t get_host_power_state()
+{
+    return host_power_state;
 }
 
 /** System Clock Configuration
@@ -193,6 +204,7 @@ uint8_t tx_usb_message(char *msg)
     return ret;
 }
 
+#if 0
 static void log_message(char *format, ...)
 {
     char *buffer = NULL;
@@ -216,6 +228,7 @@ static void log_message(char *format, ...)
         free(buffer);
     }
 }
+#endif
 
 static void tx_cec_message(uint8_t *msg, size_t len)
 {
@@ -250,6 +263,42 @@ static void tx_cec_message(uint8_t *msg, size_t len)
     strcpy(response_ptr, "\r\n");
 
     tx_usb_message(response);
+}
+
+static int flash_cmp(uint8_t *src, uint32_t size)
+{
+    uint8_t *dest = (uint8_t *)flash;
+
+    for (int i = 0; i < size; ++i)
+    {
+        if (dest[i] != src[i])
+        {
+            return dest - src;
+        }
+    }
+    return 0;
+}
+
+static void persist_cecbridge()
+{
+    uint32_t *src = (uint32_t *) &cecbridge2persist;
+
+    if (flash_cmp((uint8_t *)src, sizeof(cecbridge_t)))
+    {
+        HAL_FLASH_Unlock();
+
+        FLASH_PageErase((uint32_t)&flash);
+        FLASH->CR = 0;
+
+        for (int i = 0; i < sizeof(flash) / sizeof(flash[0]); ++i)
+        {
+            HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, (uint32_t) &flash[i],
+                    (uint64_t) src[i]);
+            FLASH->CR = 0;
+        }
+
+        HAL_FLASH_Lock();
+    }
 }
 
 static uint8_t higher_level_handler(uint8_t *cec_buffer)
@@ -297,7 +346,7 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
             break;
         case OPCODE_GIVE_DEVICE_POWER_STATUS:             // report power status
             *buf_ptr++ = OPCODE_REPORT_POWER_STATUS;
-            *buf_ptr++ = cecbridge.host_power_state ? 0 : 2;
+            *buf_ptr++ = get_host_power_state() ? 0 : 2;
             break;
         case OPCODE_GET_CEC_VERSION:                       // report CEC version
             *buf_ptr++ = OPCODE_CEC_VERSION;
@@ -311,7 +360,7 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
         {
             tx_cec_message(buf, buf_ptr - buf);
 
-            if (!cecbridge.host_power_state
+            if (!get_host_power_state()
                     && (cecbridge.configuration_bits[1] & HOST_WAKEUP_FLAG))
             {
                 host_wakeup();
@@ -406,7 +455,9 @@ static void handle_usb_message(char *command)
         }
         else
         {
-            // TODO: save addresses in flash
+            cecbridge2persist.logical_address = cecbridge.logical_address;
+            memcpy(cecbridge2persist.bit_field, cecbridge.bit_field, 2);
+            persist_cecbridge();
             strcpy(response, "?BDR ");
         }
 
@@ -426,6 +477,8 @@ static void handle_usb_message(char *command)
         if (!hex2bin(configuration_bits, arg_ptr, 2))
         {
             memcpy(cecbridge.configuration_bits, configuration_bits, sizeof(cecbridge.configuration_bits));
+            memcpy(cecbridge2persist.configuration_bits, configuration_bits, sizeof(cecbridge.configuration_bits));
+            persist_cecbridge();
         }
 
         strcpy(response, "?CFG ");
@@ -445,6 +498,8 @@ static void handle_usb_message(char *command)
             strncpy(cecbridge.osd_name, arg_ptr,
                     sizeof(cecbridge.osd_name) - 1);
             cecbridge.osd_name[sizeof(cecbridge.osd_name) - 1] = '\0';
+            memcpy(cecbridge2persist.osd_name, cecbridge.osd_name, sizeof(cecbridge2persist.osd_name));
+            persist_cecbridge();
         }
 
         strcpy(response, "?OSD ");
@@ -465,12 +520,16 @@ static void handle_usb_message(char *command)
 
             memcpy(cecbridge.physical_address, physical_address,
                     sizeof(cecbridge.physical_address));
+            memcpy(cecbridge2persist.physical_address, physical_address,
+                    sizeof(cecbridge.physical_address));
 
             arg_ptr = skip_white_space(arg_ptr);
 
             if ((device_type = hex_to_bin(*arg_ptr)) >= 0)
             {
                 cecbridge.device_type = device_type;
+                cecbridge2persist.device_type = device_type;
+                persist_cecbridge();
             }
         }
 
@@ -555,6 +614,26 @@ static void handle_usb_message(char *command)
 
 int main(void)
 {
+    /* fill cecbridge with persisted data */
+    uint8_t *src = (uint8_t *)&cecbridge2persist;
+    uint8_t *dest = (uint8_t *)&cecbridge;
+
+    if (flash[0] != 0xdeadbeef)
+    {
+        uint8_t *src = (uint8_t *)flash;
+        uint8_t *dest = (uint8_t *)&cecbridge2persist;
+
+        for (int i = 0; i < sizeof(cecbridge_t); ++i)
+        {
+           dest[i] = src[i];
+        }
+    }
+
+    for (int i = 0; i < sizeof(cecbridge_t); ++i)
+    {
+       dest[i] = src[i];
+    }
+
     /* MCU Configuration----------------------------------------------------------*/
 
     /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
