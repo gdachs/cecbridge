@@ -288,13 +288,20 @@ static void persist_cecbridge()
         HAL_FLASH_Unlock();
 
         FLASH_PageErase((uint32_t)&flash);
-        FLASH->CR = 0;
 
         for (int i = 0; i < sizeof(flash) / sizeof(flash[0]); ++i)
         {
-            HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, (uint32_t) &flash[i],
-                    (uint64_t) src[i]);
             FLASH->CR = 0;
+
+            for (int j = 0;
+                    HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD,
+                            (uint32_t) &flash[i], (uint64_t) src[i]) != HAL_OK;
+                    ++j)
+            {
+                FLASH->CR = 0;
+                if (j > 3)
+                    return;
+            }
         }
 
         HAL_FLASH_Lock();
