@@ -317,7 +317,8 @@ static uint8_t higher_level_handler(uint8_t *cec_buffer)
     uint8_t destination = cec_buffer[0] & 0x0f;
     uint8_t handled = 0;
 
-    if ((cecbridge.configuration_bits[1] & HIGHER_LEVEL_PROTOCOL_FLAG)
+    if ((cecbridge.logical_address != 0x0f) 
+            && (cecbridge.configuration_bits[1] & HIGHER_LEVEL_PROTOCOL_FLAG)
             && (destination == cecbridge.logical_address || destination == 0x0f))
     {
         handled = 1;
