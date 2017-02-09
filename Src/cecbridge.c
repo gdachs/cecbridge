@@ -436,7 +436,6 @@ static void handle_usb_message(char *command)
     switch (cmd)
     {
     case 'A': // display/update the device’s current logical address and address ‘bit-field’ (also see ‘b’)
-    case 'B':   // like A, but logical address gets committed to flash
     {
         int logical_address;
 
@@ -457,22 +456,44 @@ static void handle_usb_message(char *command)
             init_cec();
         }
 
-        if (cmd == 'A')
-        {
-            strcpy(response, "?ADR ");
-        }
-        else
-        {
-            cecbridge2persist.logical_address = cecbridge.logical_address;
-            memcpy(cecbridge2persist.bit_field, cecbridge.bit_field, 2);
-            persist_cecbridge();
-            strcpy(response, "?BDR ");
-        }
-
+        strcpy(response, "?ADR ");
         char *response_ptr = response + strlen(response);
         *response_ptr++ = hex_asc_lo(cecbridge.logical_address);
         *response_ptr++ = ' ';
         response_ptr = bin2hex(response_ptr, cecbridge.bit_field, 2);
+        strcpy(response_ptr, "\r\n");
+        break;
+    }
+    case 'B':   // like A, but logical address gets committed to flash
+    {
+        int logical_address;
+
+        arg_ptr = skip_white_space(arg_ptr);
+
+        if ((logical_address = hex_to_bin(*arg_ptr++)) >= 0)
+        {
+            uint8_t bit_field[2];
+
+            cecbridge2persist.logical_address = cecbridge.logical_address =
+                    logical_address;
+
+            arg_ptr = skip_white_space(arg_ptr);
+
+            if (!hex2bin(bit_field, arg_ptr, 2))
+            {
+                memcpy(cecbridge2persist.bit_field, bit_field, 2);
+                memcpy(cecbridge.bit_field, bit_field, 2);
+            }
+            init_cec();
+        }
+
+        persist_cecbridge();
+
+        strcpy(response, "?BDR ");
+        char *response_ptr = response + strlen(response);
+        *response_ptr++ = hex_asc_lo(cecbridge2persist.logical_address);
+        *response_ptr++ = ' ';
+        response_ptr = bin2hex(response_ptr, cecbridge2persist.bit_field, 2);
         strcpy(response_ptr, "\r\n");
         break;
     }
